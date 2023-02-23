@@ -1,41 +1,56 @@
 ﻿using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Routing;
 using System.Reflection;
 
 namespace SQLError;
 
 public partial class App : ComponentBase
 {
-    private IEnumerable<Assembly> Types()
-        => GetAssemblies()
-            .SelectMany(s => s.GetTypes())
-            .Where(p =>
-                    p.IsClass &&
-                    p.IsAbstract == false &&
-                    typeof(IAreaWeb).IsAssignableFrom(p)
-                )
-            .Select(x => x.Assembly);
 
-    public static IEnumerable<Assembly> GetAssemblies()
+    private void OnNavigateAsync(NavigationContext args)
     {
-        var list = new List<string>();
-        var stack = new Stack<Assembly>();
-
-        stack.Push(Assembly.GetEntryAssembly());
-
-        do
+        var url = args.Path.ToLower() switch
         {
-            var asm = stack.Pop();
+            "facebook" => "https://www.facebook.com",
+            _ => ""
+        };
 
-            yield return asm;
+        if (!string.IsNullOrEmpty(url))
+            NavigationManager.NavigateTo(url, true);
 
-            foreach (var reference in asm.GetReferencedAssemblies())
-                if (!list.Contains(reference.FullName))
+        return;
+    }
+
+    private IEnumerable<Assembly> GetAssemblies()
+    {
+        var loadedAssemblies = new List<Assembly>();
+        var assembliesToLoad = new Stack<Assembly>();
+
+        assembliesToLoad.Push(Assembly.GetEntryAssembly());
+
+        while (assembliesToLoad.Count > 0)
+        {
+            var assembly = assembliesToLoad.Pop();
+
+            yield return assembly;
+
+            foreach (var reference in assembly.GetReferencedAssemblies())
+            {
+                if (!loadedAssemblies.Any(a => a.FullName == reference.FullName))
                 {
-                    stack.Push(Assembly.Load(reference));
-                    list.Add(reference.FullName);
+                    var referencedAssembly = Assembly.Load(reference);
+                    assembliesToLoad.Push(referencedAssembly);
+                    loadedAssemblies.Add(referencedAssembly);
                 }
-
+            }
         }
-        while (stack.Count > 0);
+    }
+
+    private IEnumerable<Assembly> GetAreaWebImplementations()
+    {
+        return GetAssemblies()
+            .SelectMany(a => a.GetExportedTypes())
+            .Where(t => t.IsClass && !t.IsAbstract && typeof(IAreaWeb).IsAssignableFrom(t))
+            .Select(t => t.Assembly);
     }
 }
